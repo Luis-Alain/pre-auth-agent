@@ -1,5 +1,6 @@
 import express, { type ErrorRequestHandler } from "express";
 import { solicitudesRouter } from "./routes/solicitudes";
+import { simulacionRouter } from "./routes/simulacion";
 import { HttpError } from "./services/pipeline";
 
 const PORT = Number(process.env.PORT ?? 3001);
@@ -25,6 +26,7 @@ app.use((req, res, next) => {
 });
 
 app.use("/api", solicitudesRouter);
+app.use("/api", simulacionRouter);
 
 const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
   const status = error instanceof HttpError ? error.status : 500;
