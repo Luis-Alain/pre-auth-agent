@@ -104,7 +104,3 @@ export async function createSolicitudPage(input: {
   });
   return response as unknown as SolicitudPreAutorizacionPage;
 }
-
-export async function archivePage(pageId: string) {
-  await notion.pages.update({ page_id: pageId, archived: true });
-}

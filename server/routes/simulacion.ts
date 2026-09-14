@@ -8,7 +8,6 @@ import {
   crearSimulacionManual,
   crearYProcesarSimulacion,
   limpiarManuales,
-  limpiarSimulaciones,
 } from "../services/simulacion";
 
 export const simulacionRouter = Router();
@@ -120,7 +119,6 @@ simulacionRouter.post("/simulacion/manual", async (req, res, next) => {
 
 simulacionRouter.delete("/simulacion", async (_req, res, next) => {
   try {
-    await limpiarSimulaciones();
     await limpiarManuales();
     res.status(204).end();
   } catch (error) {

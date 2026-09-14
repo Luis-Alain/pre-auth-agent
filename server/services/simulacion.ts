@@ -1,6 +1,6 @@
 import path from "node:path";
 import { mkdir, writeFile, rm } from "node:fs/promises";
-import { archivePage, createSolicitudPage, listSolicitudes } from "./notion";
+import { createSolicitudPage, listSolicitudes } from "./notion";
 import {
   toSolicitudPreAutorizacionRecord,
   type SolicitudPreAutorizacionPage,
@@ -47,8 +47,6 @@ export const SCENARIOS: Scenario[] = [
     ],
   },
 ];
-
-const TITULARES_SIMULACION = new Set(SCENARIOS.map((s) => s.titular));
 
 const FILE_BASE_URL =
   process.env.FILE_BASE_URL ??
@@ -142,21 +140,6 @@ export async function crearSimulacionManual(input: {
   };
 }
 
-async function archivarFinalizadas(titulares: Set<string>, soloExpiradas: boolean): Promise<number> {
-  const todas = await listSolicitudes();
-  const objetivo = todas.filter(
-    (s) =>
-      titulares.has(s.titular.trim()) &&
-      puedeLimpiar(s, soloExpiradas),
-  );
-  await Promise.all(objetivo.map((s) => archivePage(s.id)));
-  return objetivo.length;
-}
-
-export async function limpiarSimulaciones(soloExpiradas = false): Promise<number> {
-  return archivarFinalizadas(TITULARES_SIMULACION, soloExpiradas);
-}
-
 export async function limpiarManuales(soloExpiradas = false): Promise<number> {
   if (!manualesActivas.size) return 0;
   const todas = await listSolicitudes();
@@ -164,7 +147,6 @@ export async function limpiarManuales(soloExpiradas = false): Promise<number> {
   for (const [id, manual] of manualesActivas) {
     const solicitud = todas.find((s) => s.id === id);
     if (solicitud && !puedeLimpiar(solicitud, soloExpiradas)) continue;
-    if (solicitud) await archivePage(id);
     for (const archivo of manual.archivos) {
       await rm(path.join(MANUAL_DIR, archivo), { force: true }).catch(() => undefined);
     }
@@ -175,9 +157,6 @@ export async function limpiarManuales(soloExpiradas = false): Promise<number> {
 }
 
 function limpiarPeriodica() {
-  void limpiarSimulaciones(true).catch((error) =>
-    console.error("Limpieza periodica de simulaciones fallo:", error),
-  );
   void limpiarManuales(true).catch((error) =>
     console.error("Limpieza periodica de manuales fallo:", error),
   );
