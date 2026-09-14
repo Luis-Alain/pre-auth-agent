@@ -77,7 +77,16 @@ simulacionRouter.get("/simulacion/manual/archivos/:nombre", (req, res) => {
   servirPdf(ruta, res);
 });
 
+function esBotonera(body: unknown): boolean {
+  const trampa = (body as { trampa?: unknown } | undefined)?.trampa;
+  return typeof trampa === "string" && trampa.trim() !== "";
+}
+
 simulacionRouter.post("/simulacion", async (req, res, next) => {
+  if (esBotonera(req.body)) {
+    res.status(403).json({ error: "Acceso denegado." });
+    return;
+  }
   const ip = ipDe(req);
   if (!permitido(ip)) {
     limiteAlcanzado(res, ip);
@@ -92,6 +101,10 @@ simulacionRouter.post("/simulacion", async (req, res, next) => {
 });
 
 simulacionRouter.post("/simulacion/manual", async (req, res, next) => {
+  if (esBotonera(req.body)) {
+    res.status(403).json({ error: "Acceso denegado." });
+    return;
+  }
   const ip = ipDe(req);
   if (!permitido(ip)) {
     limiteAlcanzado(res, ip);

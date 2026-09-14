@@ -46,6 +46,7 @@ export function SimulationForm() {
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [procesando, setProcesando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [trampa, setTrampa] = useState("");
 
   useEffect(() => {
     fetch("/api/simulacion/casos", { mode: "same-origin" })
@@ -75,24 +76,25 @@ export function SimulationForm() {
 
       let res: Response;
       if (esManual) {
-        if (!titularManual.trim()) throw new Error("Escribe el nombre del titular.");
-        if (!informeFile || !polizaFile) throw new Error("Adjunta el informe medico y la poliza.");
-        res = await fetch("/api/simulacion/manual", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            titular: titularManual,
-            informe: { nombre: informeFile.name, contenido: await fileToBase64(informeFile) },
-            poliza: { nombre: polizaFile.name, contenido: await fileToBase64(polizaFile) },
-          }),
-        });
-      } else {
-        res = await fetch("/api/simulacion", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ scenario: modo }),
-        });
-      }
+if (!titularManual.trim()) throw new Error("Escribe el nombre del titular.");
+          if (!informeFile || !polizaFile) throw new Error("Adjunta el informe medico y la poliza.");
+          res = await fetch("/api/simulacion/manual", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              titular: titularManual,
+              informe: { nombre: informeFile.name, contenido: await fileToBase64(informeFile) },
+              poliza: { nombre: polizaFile.name, contenido: await fileToBase64(polizaFile) },
+              trampa,
+            }),
+          });
+        } else {
+          res = await fetch("/api/simulacion", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ scenario: modo, trampa }),
+          });
+        }
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al procesar la simulacion.");
@@ -103,7 +105,7 @@ export function SimulationForm() {
     } finally {
       setProcesando(false);
     }
-  }, [informeFile, limpiar, modo, esManual, polizaFile, titularManual]);
+  }, [informeFile, limpiar, modo, esManual, polizaFile, titularManual, trampa]);
 
   useEffect(() => {
     if (!resultado) return;
@@ -121,6 +123,16 @@ export function SimulationForm() {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
+        <div aria-hidden="true" className="absolute -left-[9999px] top-auto h-px w-px overflow-hidden">
+          <Input
+            type="text"
+            tabIndex={-1}
+            autoComplete="off"
+            value={trampa}
+            onChange={(e) => setTrampa(e.target.value)}
+          />
+        </div>
+
         <div className="flex flex-col gap-2">
           <Label>Caso</Label>
           <Select value={modo} onValueChange={setModo}>
