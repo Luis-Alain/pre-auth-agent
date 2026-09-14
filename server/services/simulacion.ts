@@ -55,7 +55,7 @@ export async function limpiarSimulaciones(): Promise<number> {
     (s) =>
       s.titular.trim() === TITULAR_MUESTRA.trim() &&
       s.status !== null &&
-      ESTADOS_FINALES.includes(s.status),
+      (ESTADOS_FINALES as readonly string[]).includes(s.status),
   );
   await Promise.allSettled(
     objetivo.map((s) =>
