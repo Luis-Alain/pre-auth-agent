@@ -1,0 +1,12 @@
+.env
+.env.*
+.git
+.gitignore
+node_modules
+*.tgz
+coverage
+__.lcov
+logs
+__log
+.DS_Store
+.idea
