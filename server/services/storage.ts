@@ -115,3 +115,9 @@ export async function downloadDocuments(
   await writeJson(carpeta, "meta.json", metaFor(solicitud));
   return { informeMedico, poliza };
 }
+
+export async function eliminarArchivosSolicitud(carpeta: string): Promise<void> {
+  await rm(path.join(SOLICITUDES_DIR, carpeta), { recursive: true, force: true }).catch(
+    (error) => console.error(`No se pudieron eliminar los archivos locales de ${carpeta}:`, error),
+  );
+}

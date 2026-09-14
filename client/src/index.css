@@ -8,6 +8,11 @@
   body {
     @apply grid place-items-center min-w-[320px] min-h-screen relative m-0 bg-background text-foreground;
   }
+
+  #root {
+    width: 100%;
+    min-width: 0;
+  }
 }
 
 /* cool Bun background animation 😎 */

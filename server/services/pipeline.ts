@@ -8,7 +8,13 @@ import {
   type Solicitud,
   type StatusSolicitud,
 } from "./notion";
-import { downloadDocuments, folderFor, metaFor, writeJson } from "./storage";
+import {
+  downloadDocuments,
+  eliminarArchivosSolicitud,
+  folderFor,
+  metaFor,
+  writeJson,
+} from "./storage";
 
 export class HttpError extends Error {
   constructor(
@@ -140,5 +146,7 @@ async function run(id: string): Promise<ResultadoProceso> {
     throw new HttpError(500, `Falló el paso "${paso}": ${detalle}`, {
       cause: error,
     });
+  } finally {
+    await eliminarArchivosSolicitud(carpeta);
   }
 }
