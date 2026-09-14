@@ -9,12 +9,17 @@
     "typecheck": "bunx tsc --noEmit"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.5.1"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
-    "express": "^5.2.1"
+    "@notionhq/client": "^5.26.0",
+    "express": "^5.2.1",
+    "openai": "^7.15.0",
+    "zod": "^4.6.4"
   }
 }
