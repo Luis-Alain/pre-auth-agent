@@ -13,7 +13,10 @@ async function proxyApi(req: Request): Promise<Response> {
   const res = await fetch(target, {
     method: req.method,
     headers,
-    body: req.method === "GET" || req.method === "HEAD" ? undefined : await req.arrayBuffer(),
+    body:
+      req.method === "GET" || req.method === "HEAD"
+        ? undefined
+        : await req.arrayBuffer(),
   });
   return new Response(res.body, { status: res.status, headers: res.headers });
 }
@@ -38,4 +41,4 @@ const server = serve({
   },
 });
 
-console.log(`🚀 Server running at ${server.url}`);
+console.log(`🚀 Frontend server running at ${server.url}`);
