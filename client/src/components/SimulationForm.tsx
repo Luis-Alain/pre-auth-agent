@@ -50,12 +50,17 @@ export function SimulationForm() {
 
   useEffect(() => {
     fetch("/api/simulacion/casos", { mode: "same-origin" })
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok || !r.headers.get("content-type")?.includes("application/json")) {
+          throw new Error("No se pudieron cargar los casos. Comprueba la conexión con el backend.");
+        }
+        return r.json();
+      })
       .then((data: Scenario[]) => {
         setScenarios(data);
         if (data[0]) setModo(data[0].id);
       })
-      .catch(() => {});
+      .catch(() => setError("No se pudieron cargar los casos. Comprueba la conexión con el backend."));
   }, []);
 
   const esManual = modo === MODO_MANUAL;
@@ -142,16 +147,18 @@ if (!titularManual.trim()) throw new Error("Escribe el nombre del titular.");
             <SelectContent>
               {scenarios.map((s) => (
                 <SelectItem key={s.id} value={s.id}>
-                  {s.titular} &mdash; {s.descripcion}
+                  {s.id === "aprobada" ? "Cirugía cubierta" : s.id === "rechazada" ? "Cirugía excluida" : "Informe incompleto"}
                 </SelectItem>
               ))}
-              <SelectItem value={MODO_MANUAL}>Cargar documentos propios (manual)</SelectItem>
+              <SelectItem value={MODO_MANUAL}>Carga manual (opcional)</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
         {!esManual && scenario && (
           <div className="flex flex-col gap-2">
+            <p className="text-sm font-medium">{scenario.titular}</p>
+            <p className="text-sm text-muted-foreground">{scenario.descripcion}</p>
             <Label>Documentos (PDF de muestra)</Label>
             <div className="flex flex-col gap-2">
               {scenario.archivos.map((archivo) => (
@@ -173,7 +180,7 @@ if (!titularManual.trim()) throw new Error("Escribe el nombre del titular.");
         {esManual && (
           <div className="flex flex-col gap-4">
             <p className="text-sm text-muted-foreground">
-              Opcional, por si acaso: adjunta tus propios PDFs. Sujeto al limite anti-spam de 2 procesamientos cada 5 minutos.
+              Opcional: adjunta tus propios PDFs. Máximo 4 intentos cada 5 minutos por IP, compartidos entre los casos de ejemplo y la carga manual.
             </p>
             <div className="flex flex-col gap-2">
               <Label htmlFor="titular-manual">Titular (paciente)</Label>
@@ -203,6 +210,10 @@ if (!titularManual.trim()) throw new Error("Escribe el nombre del titular.");
 
         {resultado && (
           <div className="flex flex-col gap-2 rounded-md border p-4">
+            <p className="text-sm text-muted-foreground">
+              Esta fila se eliminará de Notion en 5 minutos, o inmediatamente si pulsas
+              «Limpiar» o «Procesar solicitud».
+            </p>
             <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-sm font-semibold ${ESTADO_COLOR[resultado.status] ?? ""}`}>
               {resultado.status}
             </span>

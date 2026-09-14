@@ -13,7 +13,7 @@ import {
 
 export const simulacionRouter = Router();
 
-const MAX_PROCESOS_POR_VENTANA = 2;
+const MAX_PROCESOS_POR_VENTANA = 4;
 const VENTANA_MS = 5 * 60 * 1000;
 
 const intentos = new Map<string, { cuenta: number; reset: number }>();

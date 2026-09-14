@@ -24,7 +24,7 @@ const server = serve({
       GET: () => Response.json({ status: "ok" }),
     },
     // Proxy API calls to the Express backend (same-origin in the browser).
-    "/api/:path*": (req) => proxyApi(req),
+    "/api/*": (req) => proxyApi(req),
     // Serve index.html for all unmatched routes.
     "/*": index,
   },

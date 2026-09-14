@@ -6,7 +6,7 @@ import {
   type SolicitudPreAutorizacionPage,
 } from "../models/solicitudes";
 import { processSolicitud, HttpError } from "./pipeline";
-import { ESTADOS_FINALES } from "../schemas/analysis";
+import { puedeLimpiar } from "./cleanup";
 
 export const SAMPLE_DIR = path.join(import.meta.dir, "..", "data", "sample");
 export const MANUAL_DIR = path.join(import.meta.dir, "..", "data", "manual");
@@ -142,46 +142,43 @@ export async function crearSimulacionManual(input: {
   };
 }
 
-async function archivarFinalizadas(titulares: Set<string>): Promise<number> {
+async function archivarFinalizadas(titulares: Set<string>, soloExpiradas: boolean): Promise<number> {
   const todas = await listSolicitudes();
   const objetivo = todas.filter(
     (s) =>
       titulares.has(s.titular.trim()) &&
-      s.status !== null &&
-      (ESTADOS_FINALES as readonly string[]).includes(s.status),
+      puedeLimpiar(s, soloExpiradas),
   );
-  await Promise.allSettled(
-    objetivo.map((s) =>
-      archivePage(s.id).catch((error) => {
-        console.error("No se pudo eliminar la solicitud:", error);
-      }),
-    ),
-  );
+  await Promise.all(objetivo.map((s) => archivePage(s.id)));
   return objetivo.length;
 }
 
-export async function limpiarSimulaciones(): Promise<number> {
-  return archivarFinalizadas(TITULARES_SIMULACION);
+export async function limpiarSimulaciones(soloExpiradas = false): Promise<number> {
+  return archivarFinalizadas(TITULARES_SIMULACION, soloExpiradas);
 }
 
-export async function limpiarManuales(): Promise<number> {
-  const limpiadas = await archivarFinalizadas(
-    new Set([...manualesActivas.values()].map((m) => m.titular)),
-  );
+export async function limpiarManuales(soloExpiradas = false): Promise<number> {
+  if (!manualesActivas.size) return 0;
+  const todas = await listSolicitudes();
+  let limpiadas = 0;
   for (const [id, manual] of manualesActivas) {
+    const solicitud = todas.find((s) => s.id === id);
+    if (solicitud && !puedeLimpiar(solicitud, soloExpiradas)) continue;
+    if (solicitud) await archivePage(id);
     for (const archivo of manual.archivos) {
       await rm(path.join(MANUAL_DIR, archivo), { force: true }).catch(() => undefined);
     }
     manualesActivas.delete(id);
+    limpiadas++;
   }
   return limpiadas;
 }
 
 function limpiarPeriodica() {
-  void limpiarSimulaciones().catch((error) =>
+  void limpiarSimulaciones(true).catch((error) =>
     console.error("Limpieza periodica de simulaciones fallo:", error),
   );
-  void limpiarManuales().catch((error) =>
+  void limpiarManuales(true).catch((error) =>
     console.error("Limpieza periodica de manuales fallo:", error),
   );
 }
