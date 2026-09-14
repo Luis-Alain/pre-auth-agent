@@ -1,13 +1,15 @@
 import path from "node:path";
+import { mkdir, writeFile, rm } from "node:fs/promises";
 import { archivePage, createSolicitudPage, listSolicitudes } from "./notion";
 import {
   toSolicitudPreAutorizacionRecord,
   type SolicitudPreAutorizacionPage,
 } from "../models/solicitudes";
-import { processSolicitud } from "./pipeline";
+import { processSolicitud, HttpError } from "./pipeline";
 import { ESTADOS_FINALES } from "../schemas/analysis";
 
 export const SAMPLE_DIR = path.join(import.meta.dir, "..", "data", "sample");
+export const MANUAL_DIR = path.join(import.meta.dir, "..", "data", "manual");
 
 export interface Scenario {
   id: string;
@@ -56,6 +58,9 @@ const FILE_BASE_URL =
 const archivoUrl = (archivo: string) =>
   `${FILE_BASE_URL}/api/simulacion/archivos/${archivo}`;
 
+const archivoManualUrl = (nombre: string) =>
+  `${FILE_BASE_URL}/api/simulacion/manual/archivos/${nombre}`;
+
 export async function crearYProcesarSimulacion(scenarioId: string) {
   const scenario = SCENARIOS.find((s) => s.id === scenarioId) ?? SCENARIOS[0]!;
 
@@ -78,26 +83,107 @@ export async function crearYProcesarSimulacion(scenarioId: string) {
   };
 }
 
-export async function limpiarSimulaciones(): Promise<number> {
+interface Subida {
+  nombre: string;
+  contenido: string;
+}
+
+const manualesActivas = new Map<string, { titular: string; archivos: string[] }>();
+
+function nombreManual(base: string): string {
+  const limpio = base.replace(/[^\w.\-]/g, "_").replace(/\.pdf$/i, "");
+  return `manual_${Date.now()}_${limpio}.pdf`;
+}
+
+export async function crearSimulacionManual(input: {
+  titular: string;
+  informe?: Subida;
+  poliza?: Subida;
+}) {
+  const titular = input.titular?.trim();
+  if (!titular) throw new HttpError(400, "El nombre del titular es requerido.");
+  if (!input.informe?.contenido || !input.poliza?.contenido) {
+    throw new HttpError(400, "Se requieren el informe medico y la poliza en PDF.");
+  }
+
+  await mkdir(MANUAL_DIR, { recursive: true });
+
+  const informeNombre = nombreManual(input.informe.nombre || "informe.pdf");
+  const polizaNombre = nombreManual(input.poliza.nombre || "poliza.pdf");
+
+  const informeBuffer = Buffer.from(input.informe.contenido, "base64");
+  const polizaBuffer = Buffer.from(input.poliza.contenido, "base64");
+  if (
+    informeBuffer.subarray(0, 4).toString() !== "%PDF" ||
+    polizaBuffer.subarray(0, 4).toString() !== "%PDF"
+  ) {
+    throw new HttpError(400, "Los archivos deben ser PDF validos.");
+  }
+  await writeFile(path.join(MANUAL_DIR, informeNombre), informeBuffer);
+  await writeFile(path.join(MANUAL_DIR, polizaNombre), polizaBuffer);
+
+  const page = await createSolicitudPage({
+    titular,
+    informeMedico: [
+      { nombre: input.informe.nombre || informeNombre, url: archivoManualUrl(informeNombre) },
+    ],
+    poliza: [
+      { nombre: input.poliza.nombre || polizaNombre, url: archivoManualUrl(polizaNombre) },
+    ],
+  });
+  manualesActivas.set(page.id, { titular, archivos: [informeNombre, polizaNombre] });
+
+  const procesado = await processSolicitud(page.id);
+  return {
+    ...procesado,
+    solicitud: toSolicitudPreAutorizacionRecord(
+      page as unknown as SolicitudPreAutorizacionPage,
+    ),
+  };
+}
+
+async function archivarFinalizadas(titulares: Set<string>): Promise<number> {
   const todas = await listSolicitudes();
   const objetivo = todas.filter(
     (s) =>
-      TITULARES_SIMULACION.has(s.titular.trim()) &&
+      titulares.has(s.titular.trim()) &&
       s.status !== null &&
       (ESTADOS_FINALES as readonly string[]).includes(s.status),
   );
   await Promise.allSettled(
     objetivo.map((s) =>
       archivePage(s.id).catch((error) => {
-        console.error("No se pudo eliminar la solicitud de simulacion:", error);
+        console.error("No se pudo eliminar la solicitud:", error);
       }),
     ),
   );
   return objetivo.length;
 }
 
-setInterval(() => {
+export async function limpiarSimulaciones(): Promise<number> {
+  return archivarFinalizadas(TITULARES_SIMULACION);
+}
+
+export async function limpiarManuales(): Promise<number> {
+  const limpiadas = await archivarFinalizadas(
+    new Set([...manualesActivas.values()].map((m) => m.titular)),
+  );
+  for (const [id, manual] of manualesActivas) {
+    for (const archivo of manual.archivos) {
+      await rm(path.join(MANUAL_DIR, archivo), { force: true }).catch(() => undefined);
+    }
+    manualesActivas.delete(id);
+  }
+  return limpiadas;
+}
+
+function limpiarPeriodica() {
   void limpiarSimulaciones().catch((error) =>
     console.error("Limpieza periodica de simulaciones fallo:", error),
   );
-}, 30_000);
+  void limpiarManuales().catch((error) =>
+    console.error("Limpieza periodica de manuales fallo:", error),
+  );
+}
+
+setInterval(limpiarPeriodica, 30_000);

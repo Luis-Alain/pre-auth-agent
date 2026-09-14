@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const CINCO_MINUTOS_MS = 5 * 60 * 1000;
+const MODO_MANUAL = "manual";
 
 const ESTADO_COLOR: Record<string, string> = {
   "Pre Aprobada": "text-green-700 bg-green-100 border-green-300",
@@ -26,9 +28,21 @@ interface Resultado {
   url: string;
 }
 
+async function fileToBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binario = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binario += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binario);
+}
+
 export function SimulationForm() {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
-  const [scenarioId, setScenarioId] = useState<string>("");
+  const [modo, setModo] = useState<string>("");
+  const [titularManual, setTitularManual] = useState("");
+  const [informeFile, setInformeFile] = useState<File | null>(null);
+  const [polizaFile, setPolizaFile] = useState<File | null>(null);
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [procesando, setProcesando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,11 +50,15 @@ export function SimulationForm() {
   useEffect(() => {
     fetch("/api/simulacion/casos", { mode: "same-origin" })
       .then((r) => r.json())
-      .then((data: Scenario[]) => { setScenarios(data); if (data[0]) setScenarioId(data[0].id); })
+      .then((data: Scenario[]) => {
+        setScenarios(data);
+        if (data[0]) setModo(data[0].id);
+      })
       .catch(() => {});
   }, []);
 
-  const scenario = scenarios.find((s) => s.id === scenarioId);
+  const esManual = modo === MODO_MANUAL;
+  const scenario = scenarios.find((s) => s.id === modo);
 
   const limpiar = useCallback(async () => {
     setResultado(null);
@@ -54,11 +72,28 @@ export function SimulationForm() {
     setResultado(null);
     try {
       await limpiar();
-      const res = await fetch("/api/simulacion", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scenario: scenarioId }),
-      });
+
+      let res: Response;
+      if (esManual) {
+        if (!titularManual.trim()) throw new Error("Escribe el nombre del titular.");
+        if (!informeFile || !polizaFile) throw new Error("Adjunta el informe medico y la poliza.");
+        res = await fetch("/api/simulacion/manual", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            titular: titularManual,
+            informe: { nombre: informeFile.name, contenido: await fileToBase64(informeFile) },
+            poliza: { nombre: polizaFile.name, contenido: await fileToBase64(polizaFile) },
+          }),
+        });
+      } else {
+        res = await fetch("/api/simulacion", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scenario: modo }),
+        });
+      }
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al procesar la simulacion.");
       setResultado({ status: data.status, respuesta: data.respuesta, url: data.solicitud.url });
@@ -68,7 +103,7 @@ export function SimulationForm() {
     } finally {
       setProcesando(false);
     }
-  }, [limpiar, scenarioId]);
+  }, [informeFile, limpiar, modo, esManual, polizaFile, titularManual]);
 
   useEffect(() => {
     if (!resultado) return;
@@ -81,13 +116,14 @@ export function SimulationForm() {
       <CardHeader>
         <CardTitle>Simulacion de solicitud</CardTitle>
         <CardDescription>
-          Selecciona un caso de ejemplo. El sistema crea la fila en Notion, extrae los datos, los analiza con IA y muestra el resultado.
+          Elige un caso de ejemplo o sube tus propios documentos (opcional). El sistema crea la fila en Notion, extrae
+          los datos, los analiza con IA y muestra el resultado.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         <div className="flex flex-col gap-2">
-          <Label>Caso de simulacion</Label>
-          <Select value={scenarioId} onValueChange={setScenarioId}>
+          <Label>Caso</Label>
+          <Select value={modo} onValueChange={setModo}>
             <SelectTrigger>
               <SelectValue placeholder="Selecciona un caso" />
             </SelectTrigger>
@@ -97,11 +133,12 @@ export function SimulationForm() {
                   {s.titular} &mdash; {s.descripcion}
                 </SelectItem>
               ))}
+              <SelectItem value={MODO_MANUAL}>Cargar documentos propios (manual)</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
-        {scenario && (
+        {!esManual && scenario && (
           <div className="flex flex-col gap-2">
             <Label>Documentos (PDF de muestra)</Label>
             <div className="flex flex-col gap-2">
@@ -121,9 +158,29 @@ export function SimulationForm() {
           </div>
         )}
 
+        {esManual && (
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted-foreground">
+              Opcional, por si acaso: adjunta tus propios PDFs. Sujeto al limite anti-spam de 2 procesamientos cada 5 minutos.
+            </p>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="titular-manual">Titular (paciente)</Label>
+              <Input id="titular-manual" value={titularManual} onChange={(e) => setTitularManual(e.target.value)} placeholder="Nombre del paciente" />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="informe-manual">Informe medico (PDF)</Label>
+              <Input id="informe-manual" type="file" accept="application/pdf" onChange={(e) => setInformeFile(e.target.files?.[0] ?? null)} />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="poliza-manual">Poliza (PDF)</Label>
+              <Input id="poliza-manual" type="file" accept="application/pdf" onChange={(e) => setPolizaFile(e.target.files?.[0] ?? null)} />
+            </div>
+          </div>
+        )}
+
         <div className="flex gap-2">
-          <Button onClick={cargar} disabled={procesando || !scenarioId}>
-            {procesando ? "Procesando (esto tarda unos segundos)..." : "Procesar simulacion"}
+          <Button onClick={cargar} disabled={procesando || !modo}>
+            {procesando ? "Procesando (esto tarda unos segundos)..." : "Procesar solicitud"}
           </Button>
           <Button variant="outline" onClick={() => void limpiar()} disabled={procesando}>
             Limpiar

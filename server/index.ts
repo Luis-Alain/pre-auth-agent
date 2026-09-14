@@ -8,7 +8,7 @@ const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? "http://localhost:3000";
 
 const app = express();
 
-app.use(express.json());
+app.use(express.json({ limit: "15mb" }));
 
 app.get(["/health", "/api/health"], (_req, res) => {
   res.json({ status: "ok" });
@@ -16,7 +16,7 @@ app.get(["/health", "/api/health"], (_req, res) => {
 
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", CLIENT_ORIGIN);
-  res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.header("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
   res.header("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") {
     res.sendStatus(204);

@@ -1,7 +1,15 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { Router, type Request } from "express";
-import { SAMPLE_DIR, SCENARIOS, crearYProcesarSimulacion, limpiarSimulaciones } from "../services/simulacion";
+import { Router, type Request, type Response } from "express";
+import {
+  MANUAL_DIR,
+  SAMPLE_DIR,
+  SCENARIOS,
+  crearSimulacionManual,
+  crearYProcesarSimulacion,
+  limpiarManuales,
+  limpiarSimulaciones,
+} from "../services/simulacion";
 
 export const simulacionRouter = Router();
 
@@ -29,9 +37,27 @@ function permitido(ip: string): boolean {
   return actual.cuenta <= MAX_PROCESOS_POR_VENTANA;
 }
 
+function limiteAlcanzado(res: Response, ip: string) {
+  const actual = intentos.get(ip);
+  const restante = actual ? Math.max(1, Math.ceil((actual.reset - Date.now()) / 1000)) : 300;
+  const minutos = Math.floor(restante / 60);
+  const segundos = restante % 60;
+  const texto = minutos > 0 ? `${minutos} min ${segundos} s` : `${segundos} s`;
+  res.setHeader("Retry-After", String(restante));
+  res.status(429).json({
+    error: `Limite de simulaciones alcanzado para evitar spam. Vuelve a intentarlo en ${texto}.`,
+  });
+}
+
 simulacionRouter.get("/simulacion/casos", (_req, res) => {
   res.json(SCENARIOS);
 });
+
+function servirPdf(ruta: string, res: Response) {
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${path.basename(ruta)}"`);
+  res.sendFile(ruta);
+}
 
 simulacionRouter.get("/simulacion/archivos/:nombre", (req, res) => {
   const ruta = path.join(SAMPLE_DIR, path.basename(req.params.nombre));
@@ -39,17 +65,22 @@ simulacionRouter.get("/simulacion/archivos/:nombre", (req, res) => {
     res.status(404).json({ error: "Archivo de simulacion no encontrado." });
     return;
   }
-  res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `attachment; filename="${path.basename(ruta)}"`);
-  res.sendFile(ruta);
+  servirPdf(ruta, res);
+});
+
+simulacionRouter.get("/simulacion/manual/archivos/:nombre", (req, res) => {
+  const ruta = path.join(MANUAL_DIR, path.basename(req.params.nombre));
+  if (!existsSync(ruta)) {
+    res.status(404).json({ error: "Archivo manual no encontrado." });
+    return;
+  }
+  servirPdf(ruta, res);
 });
 
 simulacionRouter.post("/simulacion", async (req, res, next) => {
   const ip = ipDe(req);
   if (!permitido(ip)) {
-    res
-      .status(429)
-      .json({ error: "Demasiadas simulaciones. Espera unos minutos para evitar gasto innecesario de la IA." });
+    limiteAlcanzado(res, ip);
     return;
   }
   try {
@@ -60,9 +91,24 @@ simulacionRouter.post("/simulacion", async (req, res, next) => {
   }
 });
 
+simulacionRouter.post("/simulacion/manual", async (req, res, next) => {
+  const ip = ipDe(req);
+  if (!permitido(ip)) {
+    limiteAlcanzado(res, ip);
+    return;
+  }
+  try {
+    const resultado = await crearSimulacionManual(req.body ?? {});
+    res.json(resultado);
+  } catch (error) {
+    next(error);
+  }
+});
+
 simulacionRouter.delete("/simulacion", async (_req, res, next) => {
   try {
     await limpiarSimulaciones();
+    await limpiarManuales();
     res.status(204).end();
   } catch (error) {
     next(error);
