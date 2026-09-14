@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,6 @@ const ESTADO_COLOR: Record<string, string> = {
 };
 
 interface Resultado {
-  id: string;
   status: string;
   respuesta: string;
   url: string;
@@ -28,16 +27,11 @@ export function SimulationForm() {
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [procesando, setProcesando] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const creadasRef = useRef<string[]>([]);
 
   const limpiar = useCallback(async () => {
-    const ids = creadasRef.current;
-    creadasRef.current = [];
     setResultado(null);
     setError(null);
-    await Promise.allSettled(
-      ids.map((id) => fetch(`/api/simulacion/${id}`, { method: "DELETE", mode: "same-origin" })),
-    );
+    await fetch("/api/simulacion", { method: "DELETE", mode: "same-origin" });
   }, []);
 
   const cargar = useCallback(async () => {
@@ -53,9 +47,7 @@ export function SimulationForm() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al procesar la simulacion.");
-      creadasRef.current = [data.solicitud.id];
       setResultado({
-        id: data.solicitud.id,
         status: data.status,
         respuesta: data.respuesta,
         url: data.solicitud.url,

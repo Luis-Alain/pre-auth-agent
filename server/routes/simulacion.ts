@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { Router, type Request } from "express";
-import { SAMPLE_DIR, crearYProcesarSimulacion, limpiarSimulacion } from "../services/simulacion";
+import { SAMPLE_DIR, crearYProcesarSimulacion, limpiarSimulaciones } from "../services/simulacion";
 
 export const simulacionRouter = Router();
 
@@ -58,9 +58,9 @@ simulacionRouter.post("/simulacion", async (req, res, next) => {
   }
 });
 
-simulacionRouter.delete("/simulacion/:id", async (req, res, next) => {
+simulacionRouter.delete("/simulacion", async (_req, res, next) => {
   try {
-    await limpiarSimulacion(req.params.id);
+    await limpiarSimulaciones();
     res.status(204).end();
   } catch (error) {
     next(error);

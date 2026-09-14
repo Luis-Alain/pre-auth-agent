@@ -1,10 +1,11 @@
 import path from "node:path";
-import { createSolicitudPage, archivePage } from "./notion";
+import { archivePage, createSolicitudPage, listSolicitudes } from "./notion";
 import {
   toSolicitudPreAutorizacionRecord,
   type SolicitudPreAutorizacionPage,
 } from "../models/solicitudes";
 import { processSolicitud } from "./pipeline";
+import { ESTADOS_FINALES } from "../schemas/analysis";
 
 export const SAMPLE_DIR = path.join(import.meta.dir, "..", "data", "sample");
 
@@ -28,34 +29,6 @@ const FILE_BASE_URL =
 const archivoUrl = (archivo: string) =>
   `${FILE_BASE_URL}/api/simulacion/archivos/${archivo}`;
 
-interface Registro {
-  id: string;
-  expiraEn: number;
-}
-
-const SIMULACION_TTL_MS = 5 * 60 * 1000;
-
-// ponytail: registro en memoria del proceso; si el servidor se reinicia,
-// las filas anteriores quedan en Notion sin limpiar (caso libre ~ok para demo).
-const activas = new Map<string, Registro>();
-
-export function registrarSimulacion(id: string) {
-  activas.set(id, { id, expiraEn: Date.now() + SIMULACION_TTL_MS });
-}
-
-export function esSimulacion(id: string): boolean {
-  return activas.has(id);
-}
-
-export async function limpiarSimulacion(id: string): Promise<boolean> {
-  if (!activas.has(id)) return false;
-  await archivePage(id).catch((error) => {
-    console.error("No se pudo eliminar la solicitud de simulacion en Notion:", error);
-  });
-  activas.delete(id);
-  return true;
-}
-
 export async function crearYProcesarSimulacion(titular?: string) {
   const nombreTitular = titular?.trim() || TITULAR_MUESTRA;
 
@@ -67,8 +40,6 @@ export async function crearYProcesarSimulacion(titular?: string) {
     poliza: [{ nombre: POLIZA.nombre, url: archivoUrl(POLIZA.archivo) }],
   });
 
-  registrarSimulacion(page.id);
-
   const procesado = await processSolicitud(page.id);
   return {
     ...procesado,
@@ -78,13 +49,26 @@ export async function crearYProcesarSimulacion(titular?: string) {
   };
 }
 
-export function limpiarExpiradas() {
-  const now = Date.now();
-  for (const [id, registro] of activas) {
-    if (registro.expiraEn <= now) {
-      void limpiarSimulacion(id).catch(() => undefined);
-    }
-  }
+export async function limpiarSimulaciones(): Promise<number> {
+  const todas = await listSolicitudes();
+  const objetivo = todas.filter(
+    (s) =>
+      s.titular.trim() === TITULAR_MUESTRA.trim() &&
+      s.status !== null &&
+      ESTADOS_FINALES.includes(s.status),
+  );
+  await Promise.allSettled(
+    objetivo.map((s) =>
+      archivePage(s.id).catch((error) => {
+        console.error("No se pudo eliminar la solicitud de simulacion:", error);
+      }),
+    ),
+  );
+  return objetivo.length;
 }
 
-setInterval(limpiarExpiradas, 30_000);
+setInterval(() => {
+  void limpiarSimulaciones().catch((error) =>
+    console.error("Limpieza periodica de simulaciones fallo:", error),
+  );
+}, 30_000);
