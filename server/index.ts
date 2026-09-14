@@ -9,6 +9,10 @@ const app = express();
 
 app.use(express.json());
 
+app.get("/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", CLIENT_ORIGIN);
   res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
