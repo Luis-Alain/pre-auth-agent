@@ -1,15 +1,13 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { Router, type Request } from "express";
-import { SAMPLE_DIR, crearYProcesarSimulacion, limpiarSimulaciones } from "../services/simulacion";
+import { SAMPLE_DIR, SCENARIOS, crearYProcesarSimulacion, limpiarSimulaciones } from "../services/simulacion";
 
 export const simulacionRouter = Router();
 
 const MAX_PROCESOS_POR_VENTANA = 2;
 const VENTANA_MS = 5 * 60 * 1000;
 
-// ponytail: rate limit en memoria del proceso (se reinicia con el server).
-// Para varios nodos habria que moverlo a Redis, no hace falta en el hackathon.
 const intentos = new Map<string, { cuenta: number; reset: number }>();
 
 function ipDe(req: Request): string {
@@ -31,6 +29,10 @@ function permitido(ip: string): boolean {
   return actual.cuenta <= MAX_PROCESOS_POR_VENTANA;
 }
 
+simulacionRouter.get("/simulacion/casos", (_req, res) => {
+  res.json(SCENARIOS);
+});
+
 simulacionRouter.get("/simulacion/archivos/:nombre", (req, res) => {
   const ruta = path.join(SAMPLE_DIR, path.basename(req.params.nombre));
   if (!existsSync(ruta)) {
@@ -38,7 +40,7 @@ simulacionRouter.get("/simulacion/archivos/:nombre", (req, res) => {
     return;
   }
   res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `inline; filename="${path.basename(ruta)}"`);
+  res.setHeader("Content-Disposition", `attachment; filename="${path.basename(ruta)}"`);
   res.sendFile(ruta);
 });
 
@@ -51,7 +53,7 @@ simulacionRouter.post("/simulacion", async (req, res, next) => {
     return;
   }
   try {
-    const resultado = await crearYProcesarSimulacion(req.body?.titular);
+    const resultado = await crearYProcesarSimulacion(req.body?.scenario);
     res.json(resultado);
   } catch (error) {
     next(error);

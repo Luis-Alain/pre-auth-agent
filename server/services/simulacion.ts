@@ -9,17 +9,44 @@ import { ESTADOS_FINALES } from "../schemas/analysis";
 
 export const SAMPLE_DIR = path.join(import.meta.dir, "..", "data", "sample");
 
-export const TITULAR_MUESTRA = "Jose Manuel Camarena Castano";
+export interface Scenario {
+  id: string;
+  titular: string;
+  descripcion: string;
+  archivos: { nombre: string; archivo: string }[];
+}
 
-const INFORME_MEDICO = {
-  nombre: "informe_medico_jose_camarena.pdf",
-  archivo: "informe-medico.pdf",
-};
+export const SCENARIOS: Scenario[] = [
+  {
+    id: "aprobada",
+    titular: "Jose Manuel Camarena Castano",
+    descripcion: "Hernia inguinal sintomatica - procedimiento cubierto por la poliza",
+    archivos: [
+      { nombre: "informe_medico_jose_camarena.pdf", archivo: "informe-medico-aprobado.pdf" },
+      { nombre: "poliza_jose_camarena.pdf", archivo: "poliza.pdf" },
+    ],
+  },
+  {
+    id: "rechazada",
+    titular: "Roberto Carlos Mendez Herrera",
+    descripcion: "Rinoplastia estetica - procedimiento excluido por la poliza",
+    archivos: [
+      { nombre: "informe_medico_roberto_mendez.pdf", archivo: "informe-medico-rechazado.pdf" },
+      { nombre: "poliza_roberto_mendez.pdf", archivo: "poliza.pdf" },
+    ],
+  },
+  {
+    id: "documentos-faltantes",
+    titular: "Ana Lucia Paredes Cardenas",
+    descripcion: "Informe medico incompleto - falta diagnostico y justificacion",
+    archivos: [
+      { nombre: "informe_medico_ana_paredes.pdf", archivo: "informe-medico-incompleto.pdf" },
+      { nombre: "poliza_ana_paredes.pdf", archivo: "poliza.pdf" },
+    ],
+  },
+];
 
-const POLIZA = {
-  nombre: "poliza_jose_camarena.pdf",
-  archivo: "poliza.pdf",
-};
+const TITULARES_SIMULACION = new Set(SCENARIOS.map((s) => s.titular));
 
 const FILE_BASE_URL =
   process.env.FILE_BASE_URL ??
@@ -29,15 +56,17 @@ const FILE_BASE_URL =
 const archivoUrl = (archivo: string) =>
   `${FILE_BASE_URL}/api/simulacion/archivos/${archivo}`;
 
-export async function crearYProcesarSimulacion(titular?: string) {
-  const nombreTitular = titular?.trim() || TITULAR_MUESTRA;
+export async function crearYProcesarSimulacion(scenarioId: string) {
+  const scenario = SCENARIOS.find((s) => s.id === scenarioId) ?? SCENARIOS[0]!;
 
   const page = await createSolicitudPage({
-    titular: nombreTitular,
-    informeMedico: [
-      { nombre: INFORME_MEDICO.nombre, url: archivoUrl(INFORME_MEDICO.archivo) },
-    ],
-    poliza: [{ nombre: POLIZA.nombre, url: archivoUrl(POLIZA.archivo) }],
+    titular: scenario.titular,
+    informeMedico: scenario.archivos
+      .filter((a) => a.archivo.includes("informe"))
+      .map((a) => ({ nombre: a.nombre, url: archivoUrl(a.archivo) })),
+    poliza: scenario.archivos
+      .filter((a) => a.archivo.includes("poliza"))
+      .map((a) => ({ nombre: a.nombre, url: archivoUrl(a.archivo) })),
   });
 
   const procesado = await processSolicitud(page.id);
@@ -53,7 +82,7 @@ export async function limpiarSimulaciones(): Promise<number> {
   const todas = await listSolicitudes();
   const objetivo = todas.filter(
     (s) =>
-      s.titular.trim() === TITULAR_MUESTRA.trim() &&
+      TITULARES_SIMULACION.has(s.titular.trim()) &&
       s.status !== null &&
       (ESTADOS_FINALES as readonly string[]).includes(s.status),
   );

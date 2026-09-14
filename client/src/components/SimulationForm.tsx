@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-const TITULAR_MUESTRA = "Jose Manuel Camarena Castano";
-const INFORME_MUESTRA = { nombre: "informe_medico_jose_camarena.pdf", url: "/api/simulacion/archivos/informe-medico.pdf" };
-const POLIZA_MUESTRA = { nombre: "poliza_jose_camarena.pdf", url: "/api/simulacion/archivos/poliza.pdf" };
 const CINCO_MINUTOS_MS = 5 * 60 * 1000;
 
 const ESTADO_COLOR: Record<string, string> = {
@@ -16,6 +13,13 @@ const ESTADO_COLOR: Record<string, string> = {
   "En revision": "text-sky-700 bg-sky-100 border-sky-300",
 };
 
+interface Scenario {
+  id: string;
+  titular: string;
+  descripcion: string;
+  archivos: { nombre: string; archivo: string }[];
+}
+
 interface Resultado {
   status: string;
   respuesta: string;
@@ -23,10 +27,20 @@ interface Resultado {
 }
 
 export function SimulationForm() {
-  const [titular, setTitular] = useState(TITULAR_MUESTRA);
+  const [scenarios, setScenarios] = useState<Scenario[]>([]);
+  const [scenarioId, setScenarioId] = useState<string>("");
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [procesando, setProcesando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/simulacion/casos", { mode: "same-origin" })
+      .then((r) => r.json())
+      .then((data: Scenario[]) => { setScenarios(data); if (data[0]) setScenarioId(data[0].id); })
+      .catch(() => {});
+  }, []);
+
+  const scenario = scenarios.find((s) => s.id === scenarioId);
 
   const limpiar = useCallback(async () => {
     setResultado(null);
@@ -43,28 +57,22 @@ export function SimulationForm() {
       const res = await fetch("/api/simulacion", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ titular }),
+        body: JSON.stringify({ scenario: scenarioId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al procesar la simulacion.");
-      setResultado({
-        status: data.status,
-        respuesta: data.respuesta,
-        url: data.solicitud.url,
-      });
+      setResultado({ status: data.status, respuesta: data.respuesta, url: data.solicitud.url });
     } catch (e) {
       if (e instanceof Error) setError(e.message);
       else setError(String(e));
     } finally {
       setProcesando(false);
     }
-  }, [limpiar, titular]);
+  }, [limpiar, scenarioId]);
 
   useEffect(() => {
     if (!resultado) return;
-    const timer = setTimeout(() => {
-      void limpiar();
-    }, CINCO_MINUTOS_MS);
+    const timer = setTimeout(() => { void limpiar(); }, CINCO_MINUTOS_MS);
     return () => clearTimeout(timer);
   }, [resultado, limpiar]);
 
@@ -73,33 +81,48 @@ export function SimulationForm() {
       <CardHeader>
         <CardTitle>Simulacion de solicitud</CardTitle>
         <CardDescription>
-          Prototipo: los archivos de muestra estan precargados. El sistema crea la fila en Notion, extrae los datos,
-          los analiza con IA y muestra el resultado.
+          Selecciona un caso de ejemplo. El sistema crea la fila en Notion, extrae los datos, los analiza con IA y muestra el resultado.
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         <div className="flex flex-col gap-2">
-          <Label htmlFor="titular">Titular (paciente)</Label>
-          <Input id="titular" value={titular} onChange={(e) => setTitular(e.target.value)} />
+          <Label>Caso de simulacion</Label>
+          <Select value={scenarioId} onValueChange={setScenarioId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Selecciona un caso" />
+            </SelectTrigger>
+            <SelectContent>
+              {scenarios.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.titular} &mdash; {s.descripcion}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-        <div className="flex flex-col gap-2">
-          <Label>Documentos (PDF de muestra precargados)</Label>
+        {scenario && (
           <div className="flex flex-col gap-2">
-            {[INFORME_MUESTRA, POLIZA_MUESTRA].map((archivo) => (
-              <div key={archivo.nombre} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
-                <span className="font-mono">{archivo.nombre}</span>
-                <span className="text-xs text-muted-foreground">(muestra)</span>
-                <a href={archivo.url} target="_blank" rel="noreferrer" className="ml-auto text-blue-600 hover:underline">
-                  ver PDF
-                </a>
-              </div>
-            ))}
+            <Label>Documentos (PDF de muestra)</Label>
+            <div className="flex flex-col gap-2">
+              {scenario.archivos.map((archivo) => (
+                <div key={archivo.nombre} className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+                  <span className="font-mono">{archivo.nombre}</span>
+                  <a
+                    href={`/api/simulacion/archivos/${archivo.archivo}`}
+                    download
+                    className="ml-auto text-blue-600 hover:underline"
+                  >
+                    descargar PDF
+                  </a>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="flex gap-2">
-          <Button onClick={cargar} disabled={procesando}>
+          <Button onClick={cargar} disabled={procesando || !scenarioId}>
             {procesando ? "Procesando (esto tarda unos segundos)..." : "Procesar simulacion"}
           </Button>
           <Button variant="outline" onClick={() => void limpiar()} disabled={procesando}>
