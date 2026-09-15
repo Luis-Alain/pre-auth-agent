@@ -7,7 +7,7 @@ export function App() {
       <header className="mb-8 text-center">
         <h1 className="text-3xl font-bold">Pre-Auth Agent</h1>
         <p className="mt-2 text-muted-foreground">
-          Solicitudes de pre autorizacion analizadas con IA (Notion + OpenAI)
+          Agente de solicitudes de pre autorizacion quirurgica
         </p>
       </header>
       <SolicitudesList />
