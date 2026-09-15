@@ -1,4 +1,11 @@
-import { Client, isFullPage } from "@notionhq/client";
+import {
+  APIErrorCode,
+  Client,
+  ClientErrorCode,
+  isFullDataSource,
+  isFullPage,
+  isNotionClientError,
+} from "@notionhq/client";
 import {
   toSolicitudPreAutorizacionRecord,
   type SolicitudPreAutorizacionPage,
@@ -11,8 +18,6 @@ const notion = new Client({ auth: process.env.NOTION_API_KEY });
 
 const DATA_SOURCE_ID =
   process.env.NOTION_DATA_SOURCE_ID ?? "3da129e1-a3ac-806d-b0ec-000bbf3841f6";
-
-export const STATUS_INICIAL = "En revision";
 
 export type StatusSolicitud = "En revision" | EstadoFinal;
 
@@ -46,6 +51,52 @@ export async function listSolicitudes(): Promise<Solicitud[]> {
   }));
 }
 
+const CODIGOS_NO_ENCONTRADA: string[] = [
+  APIErrorCode.ObjectNotFound,
+  APIErrorCode.ValidationError,
+  ClientErrorCode.InvalidPathParameter,
+];
+
+const normalizarId = (id: string) => id.replaceAll("-", "");
+
+export async function getSolicitud(
+  id: string,
+): Promise<SolicitudPreAutorizacionRecord | null> {
+  let page;
+  try {
+    page = await notion.pages.retrieve({ page_id: id });
+  } catch (error) {
+    if (isNotionClientError(error) && CODIGOS_NO_ENCONTRADA.includes(error.code)) {
+      return null;
+    }
+    throw error;
+  }
+
+  // Evita servir archivos de páginas ajenas a la tabla de solicitudes.
+  if (
+    !isFullPage(page) ||
+    page.parent.type !== "data_source_id" ||
+    normalizarId(page.parent.data_source_id) !== normalizarId(DATA_SOURCE_ID)
+  ) {
+    return null;
+  }
+
+  return toSolicitudPreAutorizacionRecord(page as unknown as SolicitudPreAutorizacionPage);
+}
+
+let tablaUrl: string | undefined;
+
+export async function getTablaUrl(): Promise<string> {
+  if (!tablaUrl) {
+    const dataSource = await notion.dataSources.retrieve({ data_source_id: DATA_SOURCE_ID });
+    if (!isFullDataSource(dataSource)) {
+      throw new Error("No se pudo obtener la tabla de Notion.");
+    }
+    tablaUrl = dataSource.public_url ?? dataSource.url;
+  }
+  return tablaUrl;
+}
+
 export async function updateSolicitudStatus(
   pageId: string,
   status: string | null,
@@ -68,39 +119,4 @@ export async function updateSolicitudResult(
       Respuesta: { rich_text: chunkRichText(respuesta) },
     },
   });
-}
-
-interface ArchivoExterno {
-  nombre: string;
-  url: string;
-}
-
-export async function createSolicitudPage(input: {
-  titular: string;
-  informeMedico: ArchivoExterno[];
-  poliza: ArchivoExterno[];
-}): Promise<SolicitudPreAutorizacionPage> {
-  const response = await notion.pages.create({
-    parent: { data_source_id: DATA_SOURCE_ID },
-    properties: {
-      Titular: { title: [{ type: "text", text: { content: input.titular } }] },
-      "Informe Medico": {
-        files: input.informeMedico.map((f) => ({
-          name: f.nombre,
-          type: "external",
-          external: { url: f.url },
-        })),
-      },
-      Póliza: {
-        files: input.poliza.map((f) => ({
-          name: f.nombre,
-          type: "external",
-          external: { url: f.url },
-        })),
-      },
-      Status: { status: { name: STATUS_INICIAL } },
-      Respuesta: { rich_text: [] },
-    },
-  });
-  return response as unknown as SolicitudPreAutorizacionPage;
 }

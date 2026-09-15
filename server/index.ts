@@ -1,6 +1,6 @@
 import express, { type ErrorRequestHandler } from "express";
+import { documentosRouter } from "./routes/documentos";
 import { solicitudesRouter } from "./routes/solicitudes";
-import { simulacionRouter } from "./routes/simulacion";
 import { HttpError } from "./services/pipeline";
 
 const PORT = Number(process.env.PORT ?? 3001);
@@ -16,7 +16,7 @@ app.get(["/health", "/api/health"], (_req, res) => {
 
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", CLIENT_ORIGIN);
-  res.header("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+  res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.header("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") {
     res.sendStatus(204);
@@ -26,7 +26,7 @@ app.use((req, res, next) => {
 });
 
 app.use("/api", solicitudesRouter);
-app.use("/api", simulacionRouter);
+app.use("/api", documentosRouter);
 
 const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
   const status = error instanceof HttpError ? error.status : 500;
