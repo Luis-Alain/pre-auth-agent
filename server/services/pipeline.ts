@@ -1,3 +1,4 @@
+import { APIErrorCode, isNotionClientError } from "@notionhq/client";
 import { EXTRACTION_MODEL, extractDocuments } from "../middlewares/extractor";
 import type { Analisis } from "../schemas/analysis";
 import { ANALYSIS_MODEL, analyzeSolicitud } from "./ai";
@@ -33,6 +34,12 @@ export interface ResultadoProceso {
   analisis: Analisis | null;
 }
 
+export type PasoProceso =
+  | "descarga"
+  | "extracción"
+  | "análisis"
+  | "actualización en Notion";
+
 const enProceso = new Set<string>();
 
 const normalizarId = (id: string) => id.replaceAll("-", "");
@@ -60,7 +67,10 @@ export function formatRespuesta(analisis: Analisis): string {
   return lineas.join("\n");
 }
 
-export async function processSolicitud(id: string): Promise<ResultadoProceso> {
+export async function processSolicitud(
+  id: string,
+  onPaso?: (paso: PasoProceso) => void,
+): Promise<ResultadoProceso> {
   const key = normalizarId(id);
   if (enProceso.has(key)) {
     throw new HttpError(409, "La solicitud ya se está procesando.");
@@ -68,13 +78,36 @@ export async function processSolicitud(id: string): Promise<ResultadoProceso> {
 
   enProceso.add(key);
   try {
-    return await run(key);
+    return await run(key, onPaso);
   } finally {
     enProceso.delete(key);
   }
 }
 
-async function run(id: string): Promise<ResultadoProceso> {
+export async function limpiarSolicitud(id: string): Promise<void> {
+  const key = normalizarId(id);
+  if (enProceso.has(key)) {
+    throw new HttpError(409, "La solicitud se está procesando; espera a que termine.");
+  }
+  // Un id mal formado provoca validation_error en Notion, que no distinguiríamos de otros fallos de validación.
+  if (!/^[0-9a-f]{32}$/i.test(key)) {
+    throw new HttpError(404, "Solicitud no encontrada.");
+  }
+
+  try {
+    await updateSolicitudResult(id, "En revision", "");
+  } catch (error) {
+    if (isNotionClientError(error) && error.code === APIErrorCode.ObjectNotFound) {
+      throw new HttpError(404, "Solicitud no encontrada.", { cause: error });
+    }
+    throw error;
+  }
+}
+
+async function run(
+  id: string,
+  onPaso?: (paso: PasoProceso) => void,
+): Promise<ResultadoProceso> {
   const solicitud = (await listSolicitudes()).find(
     (s) => normalizarId(s.id) === id,
   );
@@ -103,11 +136,16 @@ async function run(id: string): Promise<ResultadoProceso> {
   const statusAnterior = solicitud.status;
   await updateSolicitudStatus(solicitud.id, "En revision");
 
-  let paso = "descarga";
+  let paso: PasoProceso = "descarga";
+  const avanzar = (siguiente: PasoProceso) => {
+    paso = siguiente;
+    onPaso?.(siguiente);
+  };
   try {
+    avanzar("descarga");
     const documentos = await downloadDocuments(solicitud);
 
-    paso = "extracción";
+    avanzar("extracción");
     const { informeMedico, poliza } = await extractDocuments(documentos);
     await writeJson(carpeta, "extraccion.json", {
       meta: metaFor(solicitud),
@@ -117,7 +155,7 @@ async function run(id: string): Promise<ResultadoProceso> {
       poliza,
     });
 
-    paso = "análisis";
+    avanzar("análisis");
     const analisis = await analyzeSolicitud({
       fechaSolicitud: solicitud.createdTime.slice(0, 10),
       informeMedico,
@@ -129,7 +167,7 @@ async function run(id: string): Promise<ResultadoProceso> {
       ...analisis,
     });
 
-    paso = "actualización en Notion";
+    avanzar("actualización en Notion");
     const respuesta = formatRespuesta(analisis);
     await updateSolicitudResult(solicitud.id, analisis.status, respuesta);
 
